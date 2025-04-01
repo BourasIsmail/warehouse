@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # IoT Device Simulator
+  iot-simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: iot-simulator
+    restart: unless-stopped
+    environment:
+      - ORION_URL=http://orion:1026
+    depends_on:
+      - orion
+    networks:
+      - fiware-network
+
+  # FIWARE Orion Context Broker
+  orion:
+    image: fiware/orion:3.8.0
+    container_name: fiware-orion
+    depends_on:
+      - mongo-db
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo-db -logLevel DEBUG
+    networks:
+      - fiware-network
+
+  # MongoDB for Orion
+  mongo-db:
+    image: mongo:4.4
+    container_name: mongo-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - fiware-network
+
+  # Smart Warehouse Management Application
+  warehouse-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smart-warehouse-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_ORION_URL=http://orion:1026
+    depends_on:
+      - orion
+    networks:
+      - fiware-network
+
+networks:
+  fiware-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
+
