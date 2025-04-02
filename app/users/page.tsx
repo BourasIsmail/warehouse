@@ -42,6 +42,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import type { OrionUser } from "@/lib/fiware-types"
 
 // Replace the import for useToast
 import { toast } from "sonner"
@@ -73,26 +74,57 @@ export default function UsersPage() {
     loadUsers()
 
     // Subscribe to real-time updates
-    const unsubscribe = subscribeToNotifications("User", (data) => {
-      // Transform the data to match our User interface
-      const updatedUsers = data.map((entity: any) => ({
-        id: entity.id,
-        username: entity.username?.value || "user",
-        email: entity.email?.value || "user@example.com",
-        firstName: entity.firstName?.value || "Unknown",
-        lastName: entity.lastName?.value || "User",
-        role: entity.role?.value || "Viewer",
-        department: entity.department?.value || "General",
-        lastLogin: entity.lastLogin?.value || null,
-        status: entity.status?.value || "Active",
-        createdAt: entity.dateCreated?.value || new Date().toISOString(),
-      }))
+    let unsubscribeFunction: (() => void) | undefined
 
-      setUsers(updatedUsers)
-    })
+    const setupSubscription = async () => {
+      try {
+        const unsubscribe = await subscribeToNotifications("User", (data: OrionUser[]) => {
+          // Transform the data to match our User interface
+          const updatedUsers = data.map((entity) => {
+            // Extract role and validate it's one of the allowed values
+            const roleValue = entity.role?.value || "Viewer"
+            const validRole =
+              roleValue === "Admin" || roleValue === "Manager" || roleValue === "Operator" || roleValue === "Viewer"
+                ? (roleValue as "Admin" | "Manager" | "Operator" | "Viewer")
+                : "Viewer"
 
+            // Extract status and validate it's one of the allowed values
+            const statusValue = entity.status?.value || "Active"
+            const validStatus =
+              statusValue === "Active" || statusValue === "Inactive" || statusValue === "Locked"
+                ? (statusValue as "Active" | "Inactive" | "Locked")
+                : "Active"
+
+            return {
+              id: entity.id,
+              username: entity.username?.value || "user",
+              email: entity.email?.value || "user@example.com",
+              firstName: entity.firstName?.value || "Unknown",
+              lastName: entity.lastName?.value || "User",
+              role: validRole,
+              department: entity.department?.value || "General",
+              lastLogin: entity.lastLogin?.value || null,
+              status: validStatus,
+              createdAt: entity.dateCreated?.value || new Date().toISOString(),
+            }
+          })
+
+          setUsers(updatedUsers)
+        })
+
+        unsubscribeFunction = unsubscribe
+      } catch (error) {
+        console.error("Error setting up subscription:", error)
+      }
+    }
+
+    setupSubscription()
+
+    // And update the cleanup function
     return () => {
-      unsubscribe()
+      if (unsubscribeFunction) {
+        unsubscribeFunction()
+      }
     }
   }, [])
 

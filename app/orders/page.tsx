@@ -42,6 +42,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { format } from "date-fns"
 import { toast } from "sonner"
+import type { OrionOrder } from "@/lib/fiware-types"
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
@@ -71,43 +72,76 @@ export default function OrdersPage() {
     loadOrders()
 
     // Subscribe to real-time updates
-    const unsubscribe = subscribeToNotifications("Order", (data) => {
-      // Transform the data to match our Order interface
-      const updatedOrders = data.map((entity: any) => {
-        // Parse items from JSON string if needed
-        let items: OrderItem[] = []
-        try {
-          if (entity.items?.value) {
-            if (typeof entity.items.value === "string") {
-              items = JSON.parse(entity.items.value)
-            } else if (Array.isArray(entity.items.value)) {
-              items = entity.items.value
+    let unsubscribeFunction: (() => void) | undefined
+
+    const setupSubscription = async () => {
+      try {
+        const unsubscribe = await subscribeToNotifications("Order", (data: OrionOrder[]) => {
+          // Transform the data to match our Order interface
+          const updatedOrders = data.map((entity) => {
+            // Parse items from JSON string if needed
+            let items: OrderItem[] = []
+            try {
+              if (entity.items?.value) {
+                if (typeof entity.items.value === "string") {
+                  items = JSON.parse(entity.items.value)
+                } else if (Array.isArray(entity.items.value)) {
+                  items = entity.items.value
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing order items:", e)
             }
-          }
-        } catch (e) {
-          console.error("Error parsing order items:", e)
-        }
 
-        return {
-          id: entity.id,
-          orderId: entity.orderId?.value || entity.id,
-          customer: entity.customer?.value || "Unknown",
-          status: entity.status?.value || "New",
-          items,
-          totalAmount: entity.totalAmount?.value || 0,
-          paymentStatus: entity.paymentStatus?.value || "Pending",
-          orderDate: entity.orderDate?.value || new Date().toISOString(),
-          shipByDate: entity.shipByDate?.value || new Date().toISOString(),
-          priority: entity.priority?.value || "Normal",
-          notes: entity.notes?.value || "",
-        }
-      })
+            // Extract status and ensure it's one of the allowed values
+            const statusValue = entity.status?.value || "New"
+            const validStatus = ["New", "Processing", "Shipped", "Delivered", "Cancelled"].includes(statusValue)
+              ? (statusValue as "New" | "Processing" | "Shipped" | "Delivered" | "Cancelled")
+              : "New"
 
-      setOrders(updatedOrders)
-    })
+            // Extract payment status and ensure it's one of the allowed values
+            const paymentStatusValue = entity.paymentStatus?.value || "Pending"
+            const validPaymentStatus = ["Pending", "Paid", "Refunded"].includes(paymentStatusValue)
+              ? (paymentStatusValue as "Pending" | "Paid" | "Refunded")
+              : "Pending"
 
+            // Extract priority and ensure it's one of the allowed values
+            const priorityValue = entity.priority?.value || "Normal"
+            const validPriority = ["Low", "Normal", "High", "Urgent"].includes(priorityValue)
+              ? (priorityValue as "Low" | "Normal" | "High" | "Urgent")
+              : "Normal"
+
+            return {
+              id: entity.id,
+              orderId: entity.orderId?.value || entity.id,
+              customer: entity.customer?.value || "Unknown",
+              status: validStatus,
+              items,
+              totalAmount: entity.totalAmount?.value || 0,
+              paymentStatus: validPaymentStatus,
+              orderDate: entity.orderDate?.value || new Date().toISOString(),
+              shipByDate: entity.shipByDate?.value || new Date().toISOString(),
+              priority: validPriority,
+              notes: entity.notes?.value || "",
+            }
+          })
+
+          setOrders(updatedOrders)
+        })
+
+        unsubscribeFunction = unsubscribe
+      } catch (error) {
+        console.error("Error setting up subscription:", error)
+      }
+    }
+
+    setupSubscription()
+
+    // And update the cleanup function
     return () => {
-      unsubscribe()
+      if (unsubscribeFunction) {
+        unsubscribeFunction()
+      }
     }
   }, [])
 

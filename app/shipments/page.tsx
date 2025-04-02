@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { format } from "date-fns"
+import type { OrionShipment } from "@/lib/fiware-types"
 
 export default function ShipmentsPage() {
   const [shipments, setShipments] = useState<Shipment[]>([])
@@ -77,44 +78,69 @@ export default function ShipmentsPage() {
     loadShipments()
 
     // Subscribe to real-time updates
-    const unsubscribe = subscribeToNotifications("Shipment", (data) => {
-      // Transform the data to match our Shipment interface
-      const updatedShipments = data.map((entity: any) => {
-        // Parse items from JSON string if needed
-        let items: ShipmentItem[] = []
-        try {
-          if (entity.items?.value) {
-            if (typeof entity.items.value === "string") {
-              items = JSON.parse(entity.items.value)
-            } else if (Array.isArray(entity.items.value)) {
-              items = entity.items.value
+    let unsubscribeFunction: (() => void) | undefined
+
+    const setupSubscription = async () => {
+      try {
+        const unsubscribe = await subscribeToNotifications("Shipment", (data: OrionShipment[]) => {
+          // Transform the data to match our Shipment interface
+          const updatedShipments = data.map((entity) => {
+            // Parse items from JSON string if needed
+            let items: ShipmentItem[] = []
+            try {
+              if (entity.items?.value) {
+                if (typeof entity.items.value === "string") {
+                  items = JSON.parse(entity.items.value)
+                } else if (Array.isArray(entity.items.value)) {
+                  items = entity.items.value
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing shipment items:", e)
             }
-          }
-        } catch (e) {
-          console.error("Error parsing shipment items:", e)
-        }
 
-        return {
-          id: entity.id,
-          shipmentId: entity.shipmentId?.value || entity.id,
-          status: entity.status?.value || "Pending",
-          origin: entity.origin?.value || "Unknown",
-          destination: entity.destination?.value || "Unknown",
-          carrier: entity.carrier?.value || "Unknown",
-          trackingNumber: entity.trackingNumber?.value || "N/A",
-          items,
-          scheduledDate: entity.scheduledDate?.value || new Date().toISOString(),
-          actualDate: entity.actualDate?.value || null,
-          createdAt: entity.dateCreated?.value || new Date().toISOString(),
-          updatedAt: entity.dateModified?.value || new Date().toISOString(),
-        }
-      })
+            // Ensure status is one of the allowed values
+            const statusValue = entity.status?.value || "Pending"
+            const validStatus: "Pending" | "In Transit" | "Delivered" | "Cancelled" =
+              statusValue === "Pending" ||
+                statusValue === "In Transit" ||
+                statusValue === "Delivered" ||
+                statusValue === "Cancelled"
+                ? (statusValue as "Pending" | "In Transit" | "Delivered" | "Cancelled")
+                : "Pending"
 
-      setShipments(updatedShipments)
-    })
+            return {
+              id: entity.id,
+              shipmentId: entity.shipmentId?.value || entity.id,
+              status: validStatus,
+              origin: entity.origin?.value || "Unknown",
+              destination: entity.destination?.value || "Unknown",
+              carrier: entity.carrier?.value || "Unknown",
+              trackingNumber: entity.trackingNumber?.value || "N/A",
+              items,
+              scheduledDate: entity.scheduledDate?.value || new Date().toISOString(),
+              actualDate: entity.actualDate?.value || null,
+              createdAt: entity.dateCreated?.value || new Date().toISOString(),
+              updatedAt: entity.dateModified?.value || new Date().toISOString(),
+            }
+          })
 
+          setShipments(updatedShipments)
+        })
+
+        unsubscribeFunction = unsubscribe
+      } catch (error) {
+        console.error("Error setting up subscription:", error)
+      }
+    }
+
+    setupSubscription()
+
+    // And update the cleanup function
     return () => {
-      unsubscribe()
+      if (unsubscribeFunction) {
+        unsubscribeFunction()
+      }
     }
   }, [])
 

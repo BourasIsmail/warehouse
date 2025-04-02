@@ -6,6 +6,20 @@ import { fetchWarehouseOccupancy, type WarehouseOccupancy, subscribeToNotificati
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle } from "lucide-react"
 
+// Define the OrionWarehouseZone interface
+interface OrionWarehouseZone {
+  id: string
+  name?: {
+    value: string
+  }
+  currentInventory?: {
+    value: number
+  }
+  capacity?: {
+    value: number
+  }
+}
+
 export function WarehouseOccupancyChart() {
   const [data, setData] = useState<WarehouseOccupancy[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,7 +48,7 @@ export function WarehouseOccupancyChart() {
 
     const setupSubscription = async () => {
       try {
-        const unsubscribe = await subscribeToNotifications("WarehouseZone", async () => {
+        const unsubscribe = await subscribeToNotifications<OrionWarehouseZone>("WarehouseZone", async () => {
           try {
             // When zone data changes, fetch the updated occupancy
             const occupancy = await fetchWarehouseOccupancy()

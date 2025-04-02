@@ -3,8 +3,7 @@ import type { NextRequest } from "next/server"
 
 // This function can be marked `async` if using `await` inside
 export function middleware(request: NextRequest) {
-  // Check if the user is authenticated by looking for the token in localStorage
-  // Note: This is a simplified approach. In a real app, you would validate the token
+  // Check if the user is authenticated by looking for the token in cookies
   const token = request.cookies.get("keyrock_token")?.value
 
   // If the user is not authenticated and trying to access a protected route

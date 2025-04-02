@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { fetchWarehouseZones, type WarehouseZone, subscribeToNotifications } from "@/lib/fiware-service"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle } from "lucide-react"
+import type { OrionWarehouseZone } from "@/lib/fiware-types"
 
 export function InventoryLevelChart() {
   const [data, setData] = useState<WarehouseZone[]>([])
@@ -33,9 +34,9 @@ export function InventoryLevelChart() {
 
     const setupSubscription = async () => {
       try {
-        const unsubscribe = await subscribeToNotifications("WarehouseZone", (data) => {
+        const unsubscribe = await subscribeToNotifications("WarehouseZone", (data: OrionWarehouseZone[]) => {
           // Transform the data to match our WarehouseZone interface
-          const updatedZones = data.map((entity: any) => ({
+          const updatedZones = data.map((entity) => ({
             name: entity.name?.value || entity.id,
             current: entity.currentInventory?.value || 0,
             capacity: entity.capacity?.value || 1000,

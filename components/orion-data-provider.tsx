@@ -1,13 +1,14 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import type { Sensor, InventoryItem, WarehouseZone, WarehouseAlert } from "@/lib/fiware-service"
 
 // Define types for our context
 type OrionData = {
-  sensors: any[]
-  inventory: any[]
-  zones: any[]
-  alerts: any[]
+  sensors: Sensor[]
+  inventory: InventoryItem[]
+  zones: WarehouseZone[]
+  alerts: WarehouseAlert[]
   lastUpdated: Date | null
   loading: boolean
   error: string | null
@@ -84,10 +85,24 @@ export function OrionDataProvider({ children }: { children: ReactNode }) {
         }
 
         // Parse the responses
-        const sensors = await sensorsResponse.json()
-        const inventory = await inventoryResponse.json()
-        const zones = await zonesResponse.json()
-        const alerts = await alertsResponse.json()
+        const sensors = (await sensorsResponse.json()) as Sensor[]
+        const inventory = (await inventoryResponse.json()) as InventoryItem[]
+
+        interface OrionZoneResponse {
+          id: string
+          name?: string
+          currentInventory?: number
+          capacity?: number
+        }
+
+        // Then in the fetchData function:
+        const zones = (await zonesResponse.json()).map((zone: OrionZoneResponse) => ({
+          name: zone.name || zone.id,
+          current: zone.currentInventory || 0,
+          capacity: zone.capacity || 1000,
+          currentInventory: zone.currentInventory || 0,
+        })) as WarehouseZone[]
+        const alerts = (await alertsResponse.json()) as WarehouseAlert[]
 
         // Update state with the fetched data
         setData({

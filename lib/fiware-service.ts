@@ -1,4 +1,14 @@
 // FIWARE API service for interacting with Orion Context Broker
+import type {
+  OrionSensor,
+  OrionInventoryItem,
+  OrionWarehouseZone,
+  OrionShipment,
+  OrionOrder,
+  OrionReport,
+  OrionUser,
+  OrionSystemSetting,
+} from "./fiware-types"
 
 // Base URL for Orion Context Broker
 const ORION_BASE_URL = process.env.NEXT_PUBLIC_ORION_URL || "http://localhost:1026"
@@ -42,12 +52,14 @@ export interface InventoryItem {
   location: string
   status: "In Stock" | "Low Stock" | "Out of Stock"
   lastUpdated: string
+  threshold?: number
 }
 
 export interface WarehouseZone {
   name: string
   current: number
   capacity: number
+  currentInventory?: number // Add this property
 }
 
 export interface WarehouseOccupancy {
@@ -158,22 +170,24 @@ export async function fetchSensors(): Promise<Sensor[]> {
       throw new Error(`Error fetching sensors: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionSensor[]
 
     // Transform Orion data to our Sensor interface
-    return data.map((entity: any) => {
+    return data.map((entity) => {
       // Determine sensor status based on metadata or other attributes
       let status: SensorStatus = "online"
-      if (entity.batteryLevel?.value < 20) {
+      const batteryLevel = entity.batteryLevel?.value ?? 100
+      if (batteryLevel < 20) {
         status = "warning"
-      } else if (entity.batteryLevel?.value < 5) {
+      } else if (batteryLevel < 5) {
         status = "offline"
       }
 
       // For temperature sensors, check if value is outside normal range
       if (
         entity.sensorType?.value === "temperature" &&
-        (entity.temperature?.value > 26 || entity.temperature?.value < 0)
+        entity.temperature?.value !== undefined &&
+        (entity.temperature.value > 26 || entity.temperature.value < 0)
       ) {
         status = "warning"
       }
@@ -182,16 +196,16 @@ export async function fetchSensors(): Promise<Sensor[]> {
       let formattedValue = ""
       switch (entity.sensorType?.value) {
         case "temperature":
-          formattedValue = `${entity.temperature?.value.toFixed(1)}°C`
+          formattedValue = `${entity.temperature?.value?.toFixed(1) ?? "N/A"}°C`
           break
         case "weight":
-          formattedValue = `${entity.weight?.value} kg`
+          formattedValue = `${entity.weight?.value ?? "N/A"} kg`
           break
         case "rfid":
-          formattedValue = `${entity.scanRate?.value || 0} scans/min`
+          formattedValue = `${entity.scanRate?.value ?? 0} scans/min`
           break
         case "humidity":
-          formattedValue = `${entity.humidity?.value.toFixed(1)}%`
+          formattedValue = `${entity.humidity?.value?.toFixed(1) ?? "N/A"}%`
           break
         default:
           formattedValue = "N/A"
@@ -224,10 +238,10 @@ export async function fetchInventory(): Promise<InventoryItem[]> {
       throw new Error(`Error fetching inventory: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionInventoryItem[]
 
     // Transform Orion data to our InventoryItem interface
-    return data.map((entity: any) => {
+    return data.map((entity) => {
       // Determine inventory status based on quantity and threshold
       let status: "In Stock" | "Low Stock" | "Out of Stock" = "In Stock"
       const quantity = entity.quantity?.value || 0
@@ -244,6 +258,7 @@ export async function fetchInventory(): Promise<InventoryItem[]> {
         sku: entity.sku?.value || "Unknown",
         name: entity.name?.value || "Unknown Product",
         quantity,
+        threshold,
         location: entity.location?.value || "Unknown",
         status,
         lastUpdated: new Date(entity.dateModified?.value || Date.now()).toLocaleString(),
@@ -266,13 +281,14 @@ export async function fetchWarehouseZones(): Promise<WarehouseZone[]> {
       throw new Error(`Error fetching warehouse zones: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionWarehouseZone[]
 
     // Transform Orion data to our WarehouseZone interface
-    return data.map((entity: any) => ({
+    return data.map((entity) => ({
       name: entity.name?.value || entity.id,
       current: entity.currentInventory?.value || 0,
       capacity: entity.capacity?.value || 1000,
+      currentInventory: entity.currentInventory?.value || 0, // Add this line
     }))
   } catch (error) {
     console.error("Failed to fetch warehouse zones:", error)
@@ -311,14 +327,14 @@ export async function fetchAlerts(): Promise<WarehouseAlert[]> {
       throw new Error(`Error fetching alerts: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as Record<string, string>[]
 
     // Transform Orion data to our WarehouseAlert interface
-    return data.map((entity: any) => ({
+    return data.map((entity) => ({
       id: entity.id,
       timestamp: entity.timestamp || new Date().toISOString(),
       message: entity.message || "Unknown alert",
-      severity: entity.severity || "info",
+      severity: (entity.severity || "info") as "critical" | "warning" | "info" | "resolved",
       zone: entity.zone || "Unknown",
     }))
   } catch (error) {
@@ -338,18 +354,18 @@ export async function fetchShipments(): Promise<Shipment[]> {
       throw new Error(`Error fetching shipments: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionShipment[]
 
     // Transform Orion data to our Shipment interface
-    return data.map((entity: any) => {
+    return data.map((entity) => {
       // Parse items from JSON string if needed
       let items: ShipmentItem[] = []
       try {
         if (entity.items?.value) {
           if (typeof entity.items.value === "string") {
-            items = JSON.parse(entity.items.value)
+            items = JSON.parse(entity.items.value as string)
           } else if (Array.isArray(entity.items.value)) {
-            items = entity.items.value
+            items = entity.items.value as ShipmentItem[]
           }
         }
       } catch (e) {
@@ -359,7 +375,7 @@ export async function fetchShipments(): Promise<Shipment[]> {
       return {
         id: entity.id,
         shipmentId: entity.shipmentId?.value || entity.id,
-        status: entity.status?.value || "Pending",
+        status: (entity.status?.value || "Pending") as "Pending" | "In Transit" | "Delivered" | "Cancelled",
         origin: entity.origin?.value || "Unknown",
         destination: entity.destination?.value || "Unknown",
         carrier: entity.carrier?.value || "Unknown",
@@ -452,7 +468,7 @@ export async function createShipment(shipment: Partial<Shipment>): Promise<strin
 export async function updateShipment(id: string, updates: Partial<Shipment>): Promise<boolean> {
   try {
     // Format the updates for Orion
-    const orionUpdates: Record<string, any> = {}
+    const orionUpdates: Record<string, unknown> = {}
 
     if (updates.status !== undefined) {
       orionUpdates.status = {
@@ -517,18 +533,18 @@ export async function fetchOrders(): Promise<Order[]> {
       throw new Error(`Error fetching orders: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionOrder[]
 
     // Transform Orion data to our Order interface
-    return data.map((entity: any) => {
+    return data.map((entity) => {
       // Parse items from JSON string if needed
       let items: OrderItem[] = []
       try {
         if (entity.items?.value) {
           if (typeof entity.items.value === "string") {
-            items = JSON.parse(entity.items.value)
+            items = JSON.parse(entity.items.value as string)
           } else if (Array.isArray(entity.items.value)) {
-            items = entity.items.value
+            items = entity.items.value as OrderItem[]
           }
         }
       } catch (e) {
@@ -539,13 +555,13 @@ export async function fetchOrders(): Promise<Order[]> {
         id: entity.id,
         orderId: entity.orderId?.value || entity.id,
         customer: entity.customer?.value || "Unknown",
-        status: entity.status?.value || "New",
+        status: (entity.status?.value || "New") as "New" | "Processing" | "Shipped" | "Delivered" | "Cancelled",
         items,
         totalAmount: entity.totalAmount?.value || 0,
-        paymentStatus: entity.paymentStatus?.value || "Pending",
+        paymentStatus: (entity.paymentStatus?.value || "Pending") as "Pending" | "Paid" | "Refunded",
         orderDate: entity.orderDate?.value || new Date().toISOString(),
         shipByDate: entity.shipByDate?.value || new Date().toISOString(),
-        priority: entity.priority?.value || "Normal",
+        priority: (entity.priority?.value || "Normal") as "Low" | "Normal" | "High" | "Urgent",
         notes: entity.notes?.value || "",
       }
     })
@@ -640,7 +656,7 @@ export async function createOrder(order: Partial<Order>): Promise<string> {
 export async function updateOrder(id: string, updates: Partial<Order>): Promise<boolean> {
   try {
     // Format the updates for Orion
-    const orionUpdates: Record<string, any> = {}
+    const orionUpdates: Record<string, unknown> = {}
 
     if (updates.status !== undefined) {
       orionUpdates.status = {
@@ -731,19 +747,19 @@ export async function fetchReports(): Promise<Report[]> {
       throw new Error(`Error fetching reports: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionReport[]
 
     // Transform Orion data to our Report interface
-    return data.map((entity: any) => ({
+    return data.map((entity) => ({
       id: entity.id,
       name: entity.name?.value || "Unnamed Report",
       description: entity.description?.value || "",
-      type: entity.reportType?.value || "Custom",
+      type: (entity.reportType?.value || "Custom") as "Inventory" | "Orders" | "Shipments" | "Performance" | "Custom",
       createdBy: entity.createdBy?.value || "System",
       createdAt: entity.dateCreated?.value || new Date().toISOString(),
       lastRun: entity.lastRun?.value || null,
-      schedule: entity.schedule?.value || "On Demand",
-      format: entity.format?.value || "PDF",
+      schedule: (entity.schedule?.value || "On Demand") as "Daily" | "Weekly" | "Monthly" | "On Demand",
+      format: (entity.format?.value || "PDF") as "PDF" | "CSV" | "Excel" | "Dashboard",
       url: entity.url?.value || "#",
     }))
   } catch (error) {
@@ -828,19 +844,19 @@ export async function fetchUsers(): Promise<User[]> {
       throw new Error(`Error fetching users: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionUser[]
 
     // Transform Orion data to our User interface
-    return data.map((entity: any) => ({
+    return data.map((entity) => ({
       id: entity.id,
       username: entity.username?.value || "user",
       email: entity.email?.value || "user@example.com",
       firstName: entity.firstName?.value || "Unknown",
       lastName: entity.lastName?.value || "User",
-      role: entity.role?.value || "Viewer",
+      role: (entity.role?.value || "Viewer") as "Admin" | "Manager" | "Operator" | "Viewer",
       department: entity.department?.value || "General",
       lastLogin: entity.lastLogin?.value || null,
-      status: entity.status?.value || "Active",
+      status: (entity.status?.value || "Active") as "Active" | "Inactive" | "Locked",
       createdAt: entity.dateCreated?.value || new Date().toISOString(),
     }))
   } catch (error) {
@@ -924,10 +940,10 @@ export async function fetchSystemSettings(): Promise<SystemSetting[]> {
       throw new Error(`Error fetching system settings: ${response.statusText}`)
     }
 
-    const data = await response.json()
+    const data = (await response.json()) as OrionSystemSetting[]
 
     // Transform Orion data to our SystemSetting interface
-    return data.map((entity: any) => ({
+    return data.map((entity) => ({
       id: entity.id,
       category: entity.category?.value || "General",
       key: entity.key?.value || "unknown",
@@ -980,11 +996,14 @@ export async function updateSystemSetting(id: string, value: string, updatedBy =
 }
 
 // Subscribe to real-time notifications from Orion
-export async function subscribeToNotifications(entityType: string, callback: (data: any) => void): Promise<() => void> {
+export async function subscribeToNotifications<T>(
+  entityType: string,
+  callback: (data: T[]) => void,
+): Promise<() => void> {
   // This would typically be implemented with WebSockets or Server-Sent Events
   // For simplicity, we'll use polling in this example
 
-  let lastData: any[] = []
+  let lastData: T[] = []
   let timeoutId: NodeJS.Timeout | null = null
   let isSubscribed = true
 
@@ -1000,7 +1019,7 @@ export async function subscribeToNotifications(entityType: string, callback: (da
         throw new Error(`Error polling ${entityType}: ${response.statusText}`)
       }
 
-      const data = await response.json()
+      const data = (await response.json()) as T[]
 
       // Check if data has changed
       if (JSON.stringify(data) !== JSON.stringify(lastData)) {
@@ -1018,7 +1037,7 @@ export async function subscribeToNotifications(entityType: string, callback: (da
   }
 
   // Start polling
-  poll()
+  await poll()
 
   // Return unsubscribe function
   return () => {

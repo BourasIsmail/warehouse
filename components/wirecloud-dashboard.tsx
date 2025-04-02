@@ -1,13 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, ExternalLink, RefreshCcw } from "lucide-react"
-// Replace the import for useToast
 import { toast } from "sonner"
 import { useOrionData } from "@/components/orion-data-provider"
 
@@ -24,20 +23,13 @@ export function WireCloudDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedDashboard, setSelectedDashboard] = useState<string | null>(null)
-  // Remove this line:
-  // const { toast } = useToast()
 
   const WIRECLOUD_URL = process.env.NEXT_PUBLIC_WIRECLOUD_URL || "http://localhost:8000"
 
   const orionData = useOrionData()
 
-  useEffect(() => {
-    fetchDashboards()
-  }, [])
-
-  // Replace the fetchDashboards function with this implementation that uses real data from Orion
-
-  const fetchDashboards = async () => {
+  // Use useCallback to memoize the fetchDashboards function
+  const fetchDashboards = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -122,9 +114,12 @@ export function WireCloudDashboard() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [WIRECLOUD_URL]) // Include WIRECLOUD_URL in the dependency array
 
-  // Update the handleRefresh function:
+  useEffect(() => {
+    fetchDashboards()
+  }, [fetchDashboards]) // Now fetchDashboards is properly included in the dependency array
+
   const handleRefresh = () => {
     fetchDashboards()
     toast.success("The list of available dashboards has been updated.", {
@@ -210,7 +205,7 @@ export function WireCloudDashboard() {
                       {dashboard.id.includes("sensor") && (
                         <div className="text-sm text-left">
                           <p>• {orionData.sensors.length} active sensors</p>
-                          <p>• Types: {Array.from(new Set(orionData.sensors.map((s) => s.sensorType))).join(", ")}</p>
+                          <p>• Types: {Array.from(new Set(orionData.sensors.map((s) => s.type))).join(", ")}</p>
                           <p>
                             • Locations:{" "}
                             {Array.from(new Set(orionData.sensors.map((s) => s.location)))
@@ -224,7 +219,13 @@ export function WireCloudDashboard() {
                         <div className="text-sm text-left">
                           <p>• {orionData.inventory.length} inventory items</p>
                           <p>
-                            • {orionData.inventory.filter((i) => i.quantity < i.threshold).length} items below threshold
+                            •{" "}
+                            {
+                              orionData.inventory.filter((i) =>
+                                i.threshold !== undefined ? i.quantity < i.threshold : false,
+                              ).length
+                            }{" "}
+                            items below threshold
                           </p>
                           <p>• Total quantity: {orionData.inventory.reduce((sum, item) => sum + item.quantity, 0)}</p>
                         </div>
@@ -235,11 +236,13 @@ export function WireCloudDashboard() {
                           <p>• Total capacity: {orionData.zones.reduce((sum, zone) => sum + zone.capacity, 0)}</p>
                           <p>
                             • Current occupancy:{" "}
-                            {Math.round(
-                              (orionData.zones.reduce((sum, zone) => sum + zone.currentInventory, 0) /
-                                orionData.zones.reduce((sum, zone) => sum + zone.capacity, 0)) *
+                            {orionData.zones.length > 0
+                              ? Math.round(
+                                (orionData.zones.reduce((sum, zone) => sum + zone.current, 0) /
+                                  orionData.zones.reduce((sum, zone) => sum + zone.capacity, 0)) *
                                 100,
-                            )}
+                              )
+                              : 0}
                             %
                           </p>
                         </div>

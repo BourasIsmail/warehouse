@@ -5,6 +5,7 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Clock, XCircle } from "lucide
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchAlerts, type WarehouseAlert, subscribeToNotifications } from "@/lib/fiware-service"
+import type { OrionAlert } from "@/lib/fiware-types"
 
 export function RecentAlerts() {
   const [alerts, setAlerts] = useState<WarehouseAlert[]>([])
@@ -35,14 +36,14 @@ export function RecentAlerts() {
 
     const setupSubscription = async () => {
       try {
-        const unsubscribe = await subscribeToNotifications("Alert", (data) => {
+        const unsubscribe = await subscribeToNotifications<OrionAlert>("Alert", (data) => {
           // Transform the data to match our WarehouseAlert interface
-          const updatedAlerts = data.map((entity: any) => ({
+          const updatedAlerts = data.map((entity) => ({
             id: entity.id,
-            timestamp: entity.timestamp || new Date().toISOString(),
-            message: entity.message?.value || "Unknown alert",
-            severity: entity.severity?.value || "info",
-            zone: entity.zone?.value || "Unknown",
+            timestamp: entity.timestamp?.value ?? new Date().toISOString(),
+            message: entity.message?.value ?? "Unknown alert",
+            severity: (entity.severity?.value ?? "info") as "critical" | "warning" | "info" | "resolved",
+            zone: entity.zone?.value ?? "Unknown",
           }))
 
           // Sort alerts by timestamp, newest first

@@ -14,6 +14,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchSensors, type Sensor, type SensorType, subscribeToNotifications } from "@/lib/fiware-service"
+import type { OrionSensor } from "@/lib/fiware-types"
 
 export function SensorStatusList() {
   const [sensors, setSensors] = useState<Sensor[]>([])
@@ -42,21 +43,23 @@ export function SensorStatusList() {
 
     const setupSubscription = async () => {
       try {
-        const unsubscribe = await subscribeToNotifications("Sensor", (data) => {
+        const unsubscribe = await subscribeToNotifications("Sensor", (data: OrionSensor[]) => {
           // Transform the data to match our Sensor interface
-          const updatedSensors = data.map((entity: any) => {
+          const updatedSensors = data.map((entity) => {
             // Determine sensor status based on metadata or other attributes
             let status: "online" | "warning" | "offline" = "online"
-            if (entity.batteryLevel?.value < 20) {
+            const batteryLevel = entity.batteryLevel?.value ?? 100
+            if (batteryLevel < 20) {
               status = "warning"
-            } else if (entity.batteryLevel?.value < 5) {
+            } else if (batteryLevel < 5) {
               status = "offline"
             }
 
             // For temperature sensors, check if value is outside normal range
             if (
               entity.sensorType?.value === "temperature" &&
-              (entity.temperature?.value > 26 || entity.temperature?.value < 0)
+              entity.temperature?.value !== undefined &&
+              (entity.temperature.value > 26 || entity.temperature.value < 0)
             ) {
               status = "warning"
             }
@@ -65,16 +68,16 @@ export function SensorStatusList() {
             let formattedValue = ""
             switch (entity.sensorType?.value) {
               case "temperature":
-                formattedValue = `${entity.temperature?.value.toFixed(1)}°C`
+                formattedValue = `${entity.temperature?.value?.toFixed(1) ?? "N/A"}°C`
                 break
               case "weight":
-                formattedValue = `${entity.weight?.value} kg`
+                formattedValue = `${entity.weight?.value ?? "N/A"} kg`
                 break
               case "rfid":
-                formattedValue = `${entity.scanRate?.value || 0} scans/min`
+                formattedValue = `${entity.scanRate?.value ?? 0} scans/min`
                 break
               case "humidity":
-                formattedValue = `${entity.humidity?.value.toFixed(1)}%`
+                formattedValue = `${entity.humidity?.value?.toFixed(1) ?? "N/A"}%`
                 break
               default:
                 formattedValue = "N/A"

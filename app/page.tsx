@@ -52,9 +52,9 @@ export default function Dashboard() {
           warehouseCapacity,
           criticalAlert: criticalAlert
             ? {
-                message: criticalAlert.message,
-                zone: criticalAlert.zone,
-              }
+              message: criticalAlert.message,
+              zone: criticalAlert.zone,
+            }
             : null,
         })
 
@@ -69,48 +69,63 @@ export default function Dashboard() {
 
     loadDashboardData()
 
-    // Subscribe to real-time updates for warehouse zones and alerts
-    const unsubscribeZones = subscribeToNotifications("WarehouseZone", async () => {
+    // Store unsubscribe functions
+    let unsubscribeZonesFunction: (() => void) | null = null
+    let unsubscribeAlertsFunction: (() => void) | null = null
+
+    // Setup subscriptions
+    const setupSubscriptions = async () => {
       try {
-        // When zone data changes, recalculate totals
-        const zones = await fetchWarehouseZones()
-        const totalInventory = zones.reduce((sum, zone) => sum + zone.current, 0)
-        const totalCapacity = zones.reduce((sum, zone) => sum + zone.capacity, 0)
-        const warehouseCapacity = Math.round((totalInventory / totalCapacity) * 100)
+        // Subscribe to real-time updates for warehouse zones and alerts
+        unsubscribeZonesFunction = await subscribeToNotifications("WarehouseZone", async () => {
+          try {
+            // When zone data changes, recalculate totals
+            const zones = await fetchWarehouseZones()
+            const totalInventory = zones.reduce((sum, zone) => sum + zone.current, 0)
+            const totalCapacity = zones.reduce((sum, zone) => sum + zone.capacity, 0)
+            const warehouseCapacity = Math.round((totalInventory / totalCapacity) * 100)
 
-        setDashboardData((prev) => ({
-          ...prev,
-          totalInventory,
-          warehouseCapacity,
-        }))
+            setDashboardData((prev) => ({
+              ...prev,
+              totalInventory,
+              warehouseCapacity,
+            }))
+          } catch (err) {
+            console.error("Error updating dashboard data:", err)
+          }
+        })
+
+        unsubscribeAlertsFunction = await subscribeToNotifications("Alert", async () => {
+          try {
+            // When alerts change, check for critical alerts
+            const alerts = await fetchAlerts()
+            const criticalAlert = alerts.find((alert) => alert.severity === "critical") || null
+
+            setDashboardData((prev) => ({
+              ...prev,
+              criticalAlert: criticalAlert
+                ? {
+                  message: criticalAlert.message,
+                  zone: criticalAlert.zone,
+                }
+                : null,
+            }))
+          } catch (err) {
+            console.error("Error updating alerts:", err)
+          }
+        })
       } catch (err) {
-        console.error("Error updating dashboard data:", err)
+        console.error("Error setting up subscriptions:", err)
       }
-    })
+    }
 
-    const unsubscribeAlerts = subscribeToNotifications("Alert", async () => {
-      try {
-        // When alerts change, check for critical alerts
-        const alerts = await fetchAlerts()
-        const criticalAlert = alerts.find((alert) => alert.severity === "critical") || null
+    // Call the setup function
+    setupSubscriptions()
 
-        setDashboardData((prev) => ({
-          ...prev,
-          criticalAlert: criticalAlert
-            ? {
-                message: criticalAlert.message,
-                zone: criticalAlert.zone,
-              }
-            : null,
-        }))
-      } catch (err) {
-        console.error("Error updating alerts:", err)
-      }
-    })
-
+    // Cleanup function
     return () => {
-      unsubscribeZones()
-      unsubscribeAlerts()
+      if (unsubscribeZonesFunction) unsubscribeZonesFunction()
+      if (unsubscribeAlertsFunction) unsubscribeAlertsFunction()
     }
   }, [])
 

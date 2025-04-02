@@ -59,6 +59,18 @@ services:
       - IDM_DB_USER=keyrock
       - IDM_HOST=http://localhost:3005
       - IDM_PORT=3005
+      # These are critical for creating the admin user
+      - IDM_ADMIN_USER=admin
+      - IDM_ADMIN_EMAIL=admin@example.com
+      - IDM_ADMIN_PASS=admin
+      - IDM_EMAIL_TRANSPORT=none
+      # Enable debug logging
+      - DEBUG=idm:*
+      - IDM_CORS_ENABLED=true
+      - IDM_CORS_ORIGIN=*
+      - IDM_CORS_METHODS=GET,POST,PUT,DELETE,OPTIONS
+      - ACCESS_CONTROL_EXPOSE_HEADERS=X-Subject-Token,Content-Disposition,X-My-Custom-Header
+      - ACCESS_CONTROL_ALLOW_HEADERS=Origin, X-Requested-With, Content-Type, Accept, Authorization
     depends_on:
       - mysql-db
     networks:
@@ -69,7 +81,7 @@ services:
     image: mysql:8.0
     container_name: mysql-db
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=keyrock
       - MYSQL_DATABASE=idm
@@ -145,4 +157,5 @@ volumes:
   mysql-data:
   postgres-data:
   mariadb-data:
+
 
